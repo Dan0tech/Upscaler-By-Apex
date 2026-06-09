@@ -297,8 +297,8 @@ export default function App() {
             </div>
 
             <div 
-              onClick={() => setOption('nanoBanana')}
-              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${option === 'nanoBanana' ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/5 hover:border-white/20'}`}
+              onClick={() => setCleanGrain(!cleanGrain)}
+              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${cleanGrain ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/5 hover:border-white/20'}`}
             >
               <div className="w-8 h-8 rounded-lg bg-yellow-500/10 border border-yellow-500/40 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-yellow-500" />
@@ -310,8 +310,8 @@ export default function App() {
             </div>
             
             <div 
-              onClick={() => setOption('8kEnhance')}
-              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${option === '8kEnhance' ? 'border-green-500/40 bg-green-500/5' : 'border-white/5 hover:border-white/20'}`}
+              onClick={() => setFocusAI(!focusAI)}
+              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${focusAI ? 'border-green-500/40 bg-green-500/5' : 'border-white/5 hover:border-white/20'}`}
             >
               <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/40 flex items-center justify-center">
                 <ImageIcon className="w-4 h-4 text-green-500" />
