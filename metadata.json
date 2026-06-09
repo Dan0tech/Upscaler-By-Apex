@@ -1,0 +1,6 @@
+{
+  "name": "Neon Upscaler Pro",
+  "description": "80s retrowave styled AI image upscaler and denoiser utilizing Google Gen AI with Gemini APIs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
