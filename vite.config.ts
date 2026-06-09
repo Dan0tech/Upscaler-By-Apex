@@ -5,6 +5,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    base: '/Upscaler-By-Apex/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

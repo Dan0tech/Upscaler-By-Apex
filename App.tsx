@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Upload, Image as ImageIcon, Zap, Download, RefreshCw, AlertTriangle, MonitorSmartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { GoogleGenAI } from '@google/genai';
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
@@ -28,25 +29,67 @@ export default function App() {
     setIsProcessing(true);
     setError(null);
 
-    const formData = new FormData();
-    formData.append('image', file);
-    formData.append('option', option);
-
     try {
-      const response = await fetch('/api/enhance', {
-        method: 'POST',
-        body: formData,
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to process image');
+      // WARNING: Using API keys in the client side is generally not recommended for production
+      // as it exposes the key to the browser.
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('VITE_GEMINI_API_KEY is missing. Please add it to your secrets.');
       }
 
-      setResultImage(data.output);
+      const ai = new GoogleGenAI({ apiKey });
+
+      // Convert file to Base64
+      const reader = new FileReader();
+      const base64Data = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Extract just the base64 content, removing the data URI prefix
+      const base64Content = base64Data.split(',')[1];
+      const mimeType = file.type || 'image/jpeg';
+
+      const modelName = option === '8kEnhance' ? 'gemini-3.1-flash-image' : 'gemini-2.5-flash-image';
+      const promptText = option === '8kEnhance' 
+        ? 'significantly enhance, upscale, denoise and unblur this photo to ultra-high resolution, preserving original details with maximum clarity' 
+        : 'denoise, upscale, and unblur this photo, improving its clarity, sharpness, and quality without changing the subject';
+
+      const response = await ai.models.generateContent({
+        model: modelName,
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                data: base64Content,
+                mimeType: mimeType,
+              },
+            },
+            {
+              text: promptText,
+            },
+          ],
+        },
+      });
+
+      let finalOutput;
+      
+      // The response output contains image parts. Find the image part.
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          finalOutput = `data:${part.inlineData.mimeType || 'image/jpeg'};base64,${part.inlineData.data}`;
+          break;
+        }
+      }
+
+      if (!finalOutput) {
+        throw new Error('Model failed to return a processed image');
+      }
+
+      setResultImage(finalOutput);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Failed to process image');
     } finally {
       setIsProcessing(false);
     }
