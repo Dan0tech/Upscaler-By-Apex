@@ -1,17 +1,48 @@
-import React, { useState, useRef } from 'react';
-import { Upload, Image as ImageIcon, Zap, Download, RefreshCw, AlertTriangle, MonitorSmartphone } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import { Upload, Image as ImageIcon, Zap, Download, RefreshCw, AlertTriangle, MonitorSmartphone, Eye, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI } from '@google/genai';
+import { saveHistory, getHistory, deleteHistory, HistoryItem } from './lib/db';
 
 export default function App() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [option, setOption] = useState<'nanoBanana' | '8kEnhance'>('nanoBanana');
+  const [cleanGrain, setCleanGrain] = useState(false);
+  const [focusAI, setFocusAI] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [resultImage, setResultImage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isViewingOriginal, setIsViewingOriginal] = useState(false);
   
+  const [activeTab, setActiveTab] = useState<'portal' | 'history' | 'setup'>('portal');
+  const [historyItems, setHistoryItems] = useState<HistoryItem[]>([]);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab]);
+
+  const loadHistory = async () => {
+    try {
+      const items = await getHistory();
+      setHistoryItems(items);
+    } catch (err) {
+      console.error("Failed to load history", err);
+    }
+  };
+
+  const handleDeleteHistory = async (id: string) => {
+    try {
+      await deleteHistory(id);
+      await loadHistory();
+    } catch (err) {
+      console.error("Failed to delete history", err);
+    }
+  };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -52,9 +83,12 @@ export default function App() {
       const mimeType = file.type || 'image/jpeg';
 
       const modelName = option === '8kEnhance' ? 'gemini-3.1-flash-image' : 'gemini-2.5-flash-image';
-      const promptText = option === '8kEnhance' 
-        ? 'significantly enhance, upscale, denoise and unblur this photo to ultra-high resolution, preserving original details with maximum clarity' 
-        : 'denoise, upscale, and unblur this photo, improving its clarity, sharpness, and quality without changing the subject';
+      let promptText = option === '8kEnhance' 
+        ? 'significantly enhance and upscale this photo to ultra-high resolution, preserving original details with maximum clarity' 
+        : 'enhance and upscale this photo, improving its overall quality without changing the subject';
+        
+      if (cleanGrain) promptText += ', thoroughly denoise and remove all grain/artifacts';
+      if (focusAI) promptText += ', strictly unblur and add sharp focus to details';
 
       const response = await ai.models.generateContent({
         model: modelName,
@@ -88,6 +122,18 @@ export default function App() {
       }
 
       setResultImage(finalOutput);
+
+      try {
+        await saveHistory({
+          id: Date.now().toString(),
+          original: base64Data, // Save original base64
+          result: finalOutput,
+          timestamp: Date.now()
+        });
+      } catch (dbErr) {
+        console.error("Failed to save to history", dbErr);
+      }
+
     } catch (err: any) {
       setError(err.message || 'Failed to process image');
     } finally {
@@ -126,8 +172,9 @@ export default function App() {
         </header>
 
         <div className="flex-1 px-4 pb-6 flex flex-col gap-3 custom-scrollbar overflow-y-auto">
-          
-          <AnimatePresence mode="popLayout">
+          {activeTab === 'portal' && (
+            <>
+              <AnimatePresence mode="popLayout">
             {!previewUrl ? (
               <motion.div
                 key="upload-box"
@@ -152,7 +199,11 @@ export default function App() {
                   className="relative shrink-0 h-[240px] rounded-3xl border border-cyan-500/30 overflow-hidden shadow-[inset_0_0_20px_rgba(6,182,212,0.1)]"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={resultImage || previewUrl} alt="Preview" className="w-full h-full object-cover" />
+                  <img 
+                    src={(isViewingOriginal ? previewUrl : resultImage) || previewUrl || ''} 
+                    alt="Preview" 
+                    className="w-full h-full object-cover" 
+                  />
                   
                   {isProcessing && (
                     <div className="absolute inset-0 bg-[#0a0520]/80 backdrop-blur-sm flex flex-col items-center justify-center gap-4 z-10">
@@ -162,10 +213,24 @@ export default function App() {
                   )}
 
                   {!isProcessing && resultImage && (
-                    <div className="absolute top-3 right-3 bg-black/80 rounded-lg border border-white/10 px-2 py-1 flex items-center gap-2">
-                      <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-                      <span className="text-[9px] text-white/50 uppercase tracking-widest">RESTORE_COMPLETE</span>
-                    </div>
+                    <>
+                      <div className="absolute top-3 right-3 bg-black/80 rounded-lg border border-white/10 px-2 py-1 flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${isViewingOriginal ? 'bg-yellow-500' : 'bg-cyan-400 animate-pulse'}`} />
+                        <span className="text-[9px] text-white/50 uppercase tracking-widest">
+                          {isViewingOriginal ? 'ORIGINAL' : 'RESTORE_COMPLETE'}
+                        </span>
+                      </div>
+
+                      <button
+                        onPointerDown={() => setIsViewingOriginal(true)}
+                        onPointerUp={() => setIsViewingOriginal(false)}
+                        onPointerLeave={() => setIsViewingOriginal(false)}
+                        className="absolute bottom-3 right-3 bg-black/80 hover:bg-black/90 rounded-xl border border-white/10 px-3 py-2 flex items-center gap-2 active:scale-95 transition-all outline-none touch-none select-none z-20 shadow-lg"
+                      >
+                        <Eye className="w-4 h-4 text-white/70" />
+                        <span className="text-[9px] text-white/70 uppercase tracking-widest font-bold">Hold for Original</span>
+                      </button>
+                    </>
                   )}
                 </motion.div>
             )}
@@ -231,7 +296,10 @@ export default function App() {
               </div>
             </div>
 
-            <div className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors ${option === 'nanoBanana' ? 'border-yellow-500/20' : 'border-white/5'}`}>
+            <div 
+              onClick={() => setOption('nanoBanana')}
+              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${option === 'nanoBanana' ? 'border-yellow-500/40 bg-yellow-500/5' : 'border-white/5 hover:border-white/20'}`}
+            >
               <div className="w-8 h-8 rounded-lg bg-yellow-500/10 border border-yellow-500/40 flex items-center justify-center">
                 <Zap className="w-4 h-4 text-yellow-500" />
               </div>
@@ -241,7 +309,10 @@ export default function App() {
               </div>
             </div>
             
-            <div className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors ${option === '8kEnhance' ? 'border-green-500/20' : 'border-white/5'}`}>
+            <div 
+              onClick={() => setOption('8kEnhance')}
+              className={`bg-[#16161e] rounded-3xl p-4 border flex flex-col justify-between h-[110px] transition-colors cursor-pointer ${option === '8kEnhance' ? 'border-green-500/40 bg-green-500/5' : 'border-white/5 hover:border-white/20'}`}
+            >
               <div className="w-8 h-8 rounded-lg bg-green-500/10 border border-green-500/40 flex items-center justify-center">
                 <ImageIcon className="w-4 h-4 text-green-500" />
               </div>
@@ -291,18 +362,83 @@ export default function App() {
             )}
             
           </div>
+          </>
+        )}
+
+        {activeTab === 'history' && (
+            <div className="flex-1 flex flex-col gap-4">
+              <h2 className="text-sm font-bold text-cyan-400 uppercase tracking-widest pl-2">Task History</h2>
+              
+              {historyItems.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 opacity-50">
+                  <RefreshCw className="w-8 h-8 text-white/50" />
+                  <p className="text-xs text-white/50 uppercase tracking-widest font-bold">No History Found</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {historyItems.map((item) => (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      key={item.id} 
+                      className="bg-[#12121a] rounded-2xl border border-white/5 overflow-hidden flex flex-col shadow-[inset_0_0_10px_rgba(255,255,255,0.02)] relative"
+                    >
+                      <button 
+                        onClick={() => handleDeleteHistory(item.id)}
+                        className="absolute top-2 right-2 p-2 bg-black/80 rounded-xl border border-red-500/20 text-red-400 hover:bg-red-900/40 hover:text-red-300 transition-colors z-10"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="flex items-stretch h-[120px]">
+                        <div className="w-1/2 h-full relative border-r border-white/5 bg-black/50">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={item.original} alt="Original" className="w-full h-full object-cover" />
+                          <div className="absolute top-1 left-2 bg-black/80 rounded px-1.5 py-0.5 text-[8px] text-white/50 uppercase tracking-widest">Input</div>
+                        </div>
+                        <div className="w-1/2 h-full relative bg-cyan-900/10">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={item.result} alt="Result" className="w-full h-full object-cover" />
+                          <div className="absolute top-1 left-2 bg-cyan-900/80 rounded px-1.5 py-0.5 text-[8px] text-cyan-400 uppercase tracking-widest">Output</div>
+                          <a 
+                            href={item.result} 
+                            download={`restored_${item.id}.jpg`}
+                            className="absolute bottom-2 right-2 p-1.5 bg-cyan-900/80 rounded border border-cyan-500/30 text-cyan-400 hover:bg-cyan-800 transition-colors"
+                          >
+                            <Download className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                      <div className="px-3 py-2 bg-black/30 border-t border-white/5">
+                        <span className="text-[9px] text-white/40 font-bold tracking-widest uppercase">
+                          {new Date(item.timestamp).toLocaleString()}
+                        </span>
+                      </div>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
-        <nav className="h-20 bg-[#08080c] border-t border-white/5 px-8 flex justify-between items-center shrink-0">
-          <div className="text-cyan-500 flex flex-col items-center gap-1 cursor-pointer">
+        <nav className="h-20 bg-[#08080c] border-t border-white/5 px-8 flex justify-between items-center shrink-0 z-10 relative">
+          <div 
+            onClick={() => setActiveTab('portal')}
+            className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${activeTab === 'portal' ? 'text-cyan-500' : 'text-white/20 hover:text-white/50'}`}
+          >
             <Zap className="w-5 h-5" />
             <span className="text-[8px] uppercase font-bold tracking-widest">Portal</span>
           </div>
-          <div className="text-white/20 flex flex-col items-center gap-1 hover:text-white/50 cursor-pointer transition-colors">
+          <div 
+            onClick={() => setActiveTab('history')}
+            className={`flex flex-col items-center gap-1 cursor-pointer transition-colors ${activeTab === 'history' ? 'text-cyan-500' : 'text-white/20 hover:text-white/50'}`}
+          >
             <RefreshCw className="w-5 h-5" />
             <span className="text-[8px] uppercase font-bold tracking-widest">History</span>
           </div>
-          <div className="text-white/20 flex flex-col items-center gap-1 hover:text-white/50 cursor-pointer transition-colors">
+          <div 
+            className="text-white/20 flex flex-col items-center gap-1 cursor-not-allowed opacity-50"
+          >
             <MonitorSmartphone className="w-5 h-5" />
             <span className="text-[8px] uppercase font-bold tracking-widest">Setup</span>
           </div>
